@@ -20,8 +20,9 @@ export function generateStaticParams() {
   return out;
 }
 
-export function generateMetadata({ params }) {
-  const hit = find(params.id);
+export async function generateMetadata({ params }) {
+  const { id } = await params; // params is async from Next 15 onwards
+  const hit = find(id);
   return {
     title: hit ? `${hit.prog.name} — ${hit.inst.name}` : 'Programme not found',
     robots: { index: false, follow: false },
@@ -35,8 +36,9 @@ const fmtDate = (iso) => {
   return `${d.getDate()} ${m[d.getMonth()]} ${d.getFullYear()}`;
 };
 
-export default function ProgramPage({ params }) {
-  const hit = find(params.id);
+export default async function ProgramPage({ params }) {
+  const { id } = await params;
+  const hit = find(id);
   if (!hit) notFound();
   const { dest, inst, prog } = hit;
   const { features } = data;
