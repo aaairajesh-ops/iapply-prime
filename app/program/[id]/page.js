@@ -45,18 +45,17 @@ export default async function ProgramPage({ params }) {
 
   // Deep link into the portal. When we hold the catalogue's own programme id we
   // pass it through, so the portal can open that exact card.
-  const portalUrl = prog.portalId
-    ? `https://iapply.io/program-explorer?prgm_id=${prog.portalId}`
-    : 'https://iapply.io/program-explorer';
+  const portalUrl = inst.portalUniId
+    ? `https://iapply.io/outreachs/search-program?c_id=${inst.portalCountryId}&u_id=${inst.portalUniId}`
+    : 'https://iapply.io/outreachs/search-program';
 
   const cells = [
     ['Level', prog.level],
     ['Duration', prog.duration],
     ['Intakes', prog.intakes],
     ['Tuition fee', prog.tuition],
-    prog.deadline ? ['Apply by', fmtDate(prog.deadline)] : null,
-    prog.casDisplay ? [prog.depositLabel, prog.casDisplay] : null,
-    ['English requirement', `IELTS ${prog.ielts}`],
+    prog.applicationFee ? ['Application fee', prog.applicationFee] : null,
+    prog.offerTat ? ['Offer letter TAT', prog.offerTat] : null,
     ['Institution type', inst.type],
     ['Campus', `${inst.campus} · ${inst.city}`],
   ].filter(Boolean);
@@ -103,12 +102,16 @@ export default async function ProgramPage({ params }) {
         ))}
       </div>
 
-      <h2 className="pi-h3" style={{ fontSize: '1rem', margin: '1.4rem 0 .6rem' }}>Why this programme sells</h2>
-      <div className="pi-usps">
-        {prog.features.filter((f) => features[f]).map((f) => (
-          <span className="pi-usp" key={f}><i className={`bi ${features[f].icon}`} />{features[f].label}</span>
-        ))}
-      </div>
+      {prog.features.filter((f) => features[f]).length > 0 && (
+        <>
+          <h2 className="pi-h3" style={{ fontSize: '1rem', margin: '1.4rem 0 .6rem' }}>What the catalogue lists</h2>
+          <div className="pi-usps">
+            {prog.features.filter((f) => features[f]).map((f) => (
+              <span className="pi-usp" key={f}><i className={`bi ${features[f].icon}`} />{features[f].label}</span>
+            ))}
+          </div>
+        </>
+      )}
 
       {inst.commissionDetail && (
         <>
@@ -127,19 +130,16 @@ export default async function ProgramPage({ params }) {
                 <b>{val}</b>
               </div>
             ))}
-          <p className="pi-dim small">
-            Source: master product sheet (approved list). Internal use only — do not share with students.
-          </p>
+
         </>
       )}
 
       <div className="pp-actions">
-        <a className="pi-btn pi-btn-primary" href="https://iapply.io/outreachs/" target="_blank" rel="noopener noreferrer">
-          <i className="bi bi-send-fill" /> Apply in the iApply portal
+        <a className="pi-btn pi-btn-primary" href={portalUrl} target="_blank" rel="noopener noreferrer">
+          <i className="bi bi-send-fill" /> Apply now in the iApply portal
         </a>
         <a className="pi-btn pi-btn-ghost" href={portalUrl} target="_blank" rel="noopener noreferrer">
           <i className="bi bi-box-arrow-up-right" /> Open in Program Explorer
-          {!prog.portalId && <span className="pi-dim small"> (search view)</span>}
         </a>
         {inst.contact && dest.code === 'uk' && (
           <a className="pi-btn pi-btn-ghost" href={`tel:${inst.contact.replace(/[^+0-9]/g, '')}`}>

@@ -397,3 +397,10 @@ button { font: inherit; cursor: pointer; }
   background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
   padding: .6rem .8rem; font-size: .76rem; white-space: pre-wrap;
 }
+
+/* smart filter bar */
+.pi-smartbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem;
+  background: #fff; border: 1.5px solid var(--line); border-radius: 12px;
+  padding: .7rem 1rem; margin-bottom: 1.2rem;
+}
