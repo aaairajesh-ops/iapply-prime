@@ -89,7 +89,10 @@ export default function PrimeList({ data }) {
       <header className="pi-topbar">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logos/iapply.png" alt="iApply" height={30} />
-        <strong style={{ marginLeft: '.6rem', letterSpacing: '-.02em' }}>Prime Institutions</strong>
+        <nav className="pi-topnav">
+          <span className="is-on">Prime Institutions</span>
+          <a href="/test-prep">Test Prep</a>
+        </nav>
         <div className="pi-topbar-right">
           <span className="pi-btn pi-btn-light">
             <i className="bi bi-bookmark-heart" /> Shortlist <span className="pi-count">{shortlist.length}</span>

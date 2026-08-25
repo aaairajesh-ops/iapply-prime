@@ -404,3 +404,12 @@ button { font: inherit; cursor: pointer; }
   background: #fff; border: 1.5px solid var(--line); border-radius: 12px;
   padding: .7rem 1rem; margin-bottom: 1.2rem;
 }
+
+/* top navigation between the two products */
+.pi-topnav { display: flex; align-items: center; gap: .3rem; margin-left: 1.2rem; }
+.pi-topnav a, .pi-topnav span {
+  font-size: .9rem; font-weight: 700; text-decoration: none; color: var(--muted);
+  padding: .45rem .9rem; border-radius: 999px;
+}
+.pi-topnav a:hover { color: var(--green-dark); background: var(--mint); }
+.pi-topnav .is-on { color: var(--ink); background: var(--bg); }

@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  async rewrites() {
+    // the Test Prep marketing page ships as static HTML under /public
+    return [{ source: '/test-prep', destination: '/test-prep/index.html' }];
+  },
   async headers() {
     return [
       {
