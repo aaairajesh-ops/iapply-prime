@@ -42,7 +42,8 @@ async function runSync({ instIds, trigger }) {
     const ids = UNI[inst.id] || (inst.portalUniId ? [inst.portalCountryId, inst.portalUniId] : null);
     if (!ids) { say(`✗ ${inst.id}: no catalogue id`); totals.errors++; continue; }
     try {
-      const catalogue = await fetchInstitution(ids[0], ids[1], { pace: PACE_MS });
+      const portal = ids[2] === 'portal' || inst.catalogueSource === 'portal';
+      const catalogue = await fetchInstitution(ids[0], ids[1], { pace: PACE_MS, portal });
       let r;
       if (isPersistent()) {
         r = await applyInstitution(inst.id, catalogue, { log: say });
@@ -54,10 +55,10 @@ async function runSync({ instIds, trigger }) {
         for (const m of missing) say(`   ! ${m.name}: not found in the catalogue any more (kept, flagged)`);
       }
       totals.updated += r.updated; totals.unchanged += r.unchanged; totals.missing += r.missing;
-      say(`✓ ${inst.id}: catalogue lists ${catalogue.total ?? catalogue.programs.length}, curated ${inst.programs.length} → ${r.updated} updated, ${r.unchanged} unchanged${r.missing ? `, ${r.missing} missing` : ''}`);
+      say(`✓ ${inst.id}${catalogue.source === 'portal' ? ' (agent portal)' : ''}: catalogue lists ${catalogue.total ?? catalogue.programs.length}, curated ${inst.programs.length} → ${r.updated} updated, ${r.unchanged} unchanged${r.missing ? `, ${r.missing} missing` : ''}`);
     } catch (e) {
       totals.errors++;
-      say(`✗ ${inst.id}: ${e.message} — kept existing data`);
+      say(`${e.auth ? '⚠' : '✗'} ${inst.id}: ${e.message} — kept existing data`);
       if (e.blocked) await sleep(10000); // back off before the next institution
     }
     if (n < targets.length - 1) await sleep(PACE_MS);
