@@ -51,13 +51,17 @@ const portalUrl = (inst) =>
     ? `https://iapply.io/outreachs/search-program?c_id=${inst.portalCountryId}&u_id=${inst.portalUniId}`
     : 'https://iapply.io/outreachs/search-program';
 
+// Local /public/logos file first; otherwise the logo URL the catalogue publishes.
+const logoSrc = (inst) => (inst.logo ? `/logos/${inst.logo}` : inst.portalLogo || null);
+
 function Logo({ inst }) {
   const [failed, setFailed] = useState(false);
-  if (!inst.logo || failed) return <span className="pi-logo">{initials(inst.name)}</span>;
+  const src = logoSrc(inst);
+  if (!src || failed) return <span className="pi-logo">{initials(inst.name)}</span>;
   return (
     <span className="pi-logo has-img">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={`/logos/${inst.logo}`} alt={`${inst.name} logo`} loading="lazy" onError={() => setFailed(true)} />
+      <img src={src} alt={`${inst.name} logo`} loading="lazy" onError={() => setFailed(true)} />
     </span>
   );
 }
