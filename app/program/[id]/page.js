@@ -80,9 +80,9 @@ export default async function ProgramPage({ params }) {
 
       <div className="pp-head">
         <span className="pi-logo has-img" style={{ width: 62, height: 62 }}>
-          {inst.logo ? (
+          {inst.logo || inst.portalLogo ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={`/logos/${inst.logo}`} alt={`${inst.name} logo`} />
+            <img src={inst.logo ? `/logos/${inst.logo}` : inst.portalLogo} alt={`${inst.name} logo`} />
           ) : (
             inst.name.slice(0, 2).toUpperCase()
           )}
