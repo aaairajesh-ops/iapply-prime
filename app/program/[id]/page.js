@@ -1,28 +1,25 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import data from '../../../lib/prime-data.json';
+import { loadData } from '../../../lib/store';
+import { classifyIntakes, intakeFlash, isOnshore } from '../../../lib/intakes';
 
-function find(id) {
+// Programme pages read the live dataset (database when configured).
+export const dynamic = 'force-dynamic';
+
+async function find(id) {
+  const data = await loadData();
   for (const dest of data.destinations) {
     for (const inst of dest.institutions) {
       const prog = inst.programs.find((p) => p.id === id);
-      if (prog) return { dest, inst, prog };
+      if (prog) return { data, dest, inst, prog };
     }
   }
   return null;
 }
 
-export function generateStaticParams() {
-  const out = [];
-  for (const dest of data.destinations)
-    for (const inst of dest.institutions)
-      for (const prog of inst.programs) out.push({ id: prog.id });
-  return out;
-}
-
 export async function generateMetadata({ params }) {
   const { id } = await params; // params is async from Next 15 onwards
-  const hit = find(id);
+  const hit = await find(id);
   return {
     title: hit ? `${hit.prog.name} — ${hit.inst.name}` : 'Programme not found',
     robots: { index: false, follow: false },
@@ -38,10 +35,13 @@ const fmtDate = (iso) => {
 
 export default async function ProgramPage({ params }) {
   const { id } = await params;
-  const hit = find(id);
+  const hit = await find(id);
   if (!hit) notFound();
-  const { dest, inst, prog } = hit;
+  const { data, dest, inst, prog } = hit;
   const { features } = data;
+  const now = new Date();
+  const flash = intakeFlash(prog.intakeList, now);
+  const { immediate, past } = classifyIntakes(prog.intakeList, now);
 
   // Deep link into the portal. When we hold the catalogue's own programme id we
   // pass it through, so the portal can open that exact card.
@@ -52,7 +52,21 @@ export default async function ProgramPage({ params }) {
   const cells = [
     ['Level', prog.level],
     ['Duration', prog.duration],
-    ['Intakes', prog.intakes],
+    ['Intakes', (
+      <span className="pi-intakes" key="intakes">
+        {(prog.intakeList || []).map((i) => {
+          const soon = immediate.some((x) => x.label === i.label);
+          const gone = past.some((x) => x.label === i.label) || /^clos/i.test(i.status || '');
+          return (
+            <span key={i.label} title={i.status && i.status !== 'unknown' ? `${i.label} · ${i.status}` : i.label}
+              className={'pi-intake' + (soon ? ' is-soon' : '') + (gone ? ' is-past' : '') + (isOnshore(i.status) ? ' is-onshore' : '')}>
+              {i.label}{isOnshore(i.status) ? ' · onshore' : ''}
+            </span>
+          );
+        })}
+        {(!prog.intakeList || prog.intakeList.length === 0) && (prog.intakes || '—')}
+      </span>
+    )],
     ['Tuition fee', prog.tuition],
     prog.applicationFee ? ['Application fee', prog.applicationFee] : null,
     prog.offerTat ? ['Offer letter TAT', prog.offerTat] : null,
@@ -78,6 +92,13 @@ export default async function ProgramPage({ params }) {
           <div className="pi-dim">
             {inst.name} · {dest.name}
           </div>
+          {flash && (
+            <span className={'pi-intake-flash is-' + flash.tone} title={flash.detail}>
+              <i className={flash.tone === 'onshore' ? 'bi bi-geo-alt-fill' : 'bi bi-broadcast'} />
+              <b>{flash.title}</b>
+              <span className="pi-intake-flash-detail">{flash.detail}</span>
+            </span>
+          )}
         </div>
       </div>
 

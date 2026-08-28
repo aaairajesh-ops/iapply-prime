@@ -1,6 +1,43 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { classifyIntakes, intakeFlash, isOnshore, normaliseProgramIntakes, IMMEDIATE_WINDOW_MONTHS } from '../lib/intakes';
+
+const NOW = () => new Date();
+
+// Programme pill: pulses when an intake is open now (current month + next few).
+function IntakeFlash({ prog }) {
+  const f = intakeFlash(prog.intakeList, NOW());
+  if (!f) return null;
+  return (
+    <span className={'pi-intake-flash is-' + f.tone} title={f.detail}>
+      <i className={f.tone === 'onshore' ? 'bi bi-geo-alt-fill' : 'bi bi-broadcast'} />
+      <b>{f.title}</b>
+      <span className="pi-intake-flash-detail">{f.detail}</span>
+    </span>
+  );
+}
+
+// Every intake the catalogue lists, coloured by how soon it is / its status.
+function IntakeChips({ prog }) {
+  const { immediate, past } = classifyIntakes(prog.intakeList, NOW());
+  if (!prog.intakeList || prog.intakeList.length === 0) return null;
+  return (
+    <span className="pi-intakes">
+      <i className="bi bi-calendar-event" />
+      {prog.intakeList.map((i) => {
+        const soon = immediate.some((x) => x.label === i.label);
+        const gone = past.some((x) => x.label === i.label) || /^clos/i.test(i.status || '');
+        const cls = 'pi-intake' + (soon ? ' is-soon' : '') + (gone ? ' is-past' : '') + (isOnshore(i.status) ? ' is-onshore' : '');
+        return (
+          <span key={i.label} className={cls} title={i.status && i.status !== 'unknown' ? `${i.label} · ${i.status}` : i.label}>
+            {i.label}{isOnshore(i.status) ? ' · onshore' : ''}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
 
 const initials = (name) => {
   const p = name.split(/\s+/).filter((w) => /^[A-Z]/.test(w));
@@ -33,10 +70,28 @@ const SMART = [
   { key: 'backlogs_allowed', label: 'Backlogs allowed', icon: 'bi-clipboard-check', test: (p) => p.features.includes('backlogs_allowed') },
   { key: 'fast_tat', label: 'Offer in 7 days or less', icon: 'bi-stopwatch', test: (p) => {
       const m = (p.offerTat || '').match(/(\d+)/); return m && Number(m[1]) <= 7; } },
-  { key: 'intake_2027', label: '2027 intake', icon: 'bi-calendar-event', test: (p) => /2027/.test(p.intakes || '') },
+  { key: 'immediate', label: 'Immediate intakes', icon: 'bi-broadcast', hot: true,
+    title: `Intake in the current month or the next ${IMMEDIATE_WINDOW_MONTHS} months`,
+    test: (p) => classifyIntakes(p.intakeList, NOW()).immediate.length > 0 },
+  { key: 'onshore', label: 'Onshore only', icon: 'bi-geo-alt-fill', hot: true,
+    title: 'Immediate intakes the catalogue marks "Open (Onshore Only)"',
+    test: (p) => classifyIntakes(p.intakeList, NOW()).onshore.length > 0 },
+  { key: 'intake_2027', label: '2027 intake', icon: 'bi-calendar-event', test: (p) => (p.intakeList || []).some((i) => i.year === 2027) },
 ];
 
-export default function PrimeList({ data }) {
+const immediateCount = (inst) => inst.programs.filter((p) => classifyIntakes(p.intakeList, NOW()).immediate.length > 0).length;
+const onshoreCount = (inst) => inst.programs.filter((p) => classifyIntakes(p.intakeList, NOW()).onshore.length > 0).length;
+
+const normalise = (data) => ({
+  ...data,
+  destinations: data.destinations.map((d) => ({
+    ...d,
+    institutions: d.institutions.map((i) => ({ ...i, programs: i.programs.map(normaliseProgramIntakes) })),
+  })),
+});
+
+export default function PrimeList({ data: initial }) {
+  const [data, setData] = useState(() => normalise(initial));
   const { destinations, features } = data;
   const [destCode, setDestCode] = useState(destinations[0].code);
   const [openInst, setOpenInst] = useState(null);
@@ -46,7 +101,7 @@ export default function PrimeList({ data }) {
   const [sort, setSort] = useState('tf');
   const [dir, setDir] = useState(-1);
   const [shortlist, setShortlist] = useState([]);
-  const [sync, setSync] = useState({ running: false, log: [], at: null });
+  const [sync, setSync] = useState({ running: false, log: [], at: data.lastSyncedAt || null, persisted: data.source === 'database' || data.source === 'blob', store: data.source });
 
   const dest = destinations.find((d) => d.code === destCode);
   const toggleSmart = (k) => setSmart((s) => (s.includes(k) ? s.filter((x) => x !== k) : [...s, k]));
@@ -73,15 +128,43 @@ export default function PrimeList({ data }) {
   const toggleShortlist = (key) =>
     setShortlist((s) => (s.includes(key) ? s.filter((x) => x !== key) : [...s, key]));
 
+  // Sync one institution at a time so the log streams and no single request
+  // runs long enough to hit Vercel's limit; the server paces portal calls.
   async function runSync() {
-    setSync({ running: true, log: ['Starting sync from the iApply catalogue…'], at: null });
-    try {
-      const res = await fetch('/api/sync', { method: 'POST' });
-      const out = await res.json();
-      setSync({ running: false, log: out.log || [out.error || 'No response'], at: out.finishedAt || new Date().toISOString() });
-    } catch (e) {
-      setSync({ running: false, log: ['Sync failed: ' + e.message], at: null });
+    const all = destinations.flatMap((d) => d.institutions);
+    const log = [`Syncing ${all.length} institutions from the iApply catalogue…`];
+    setSync((s) => ({ ...s, running: true, log: [...log] }));
+    const totals = { updated: 0, unchanged: 0, missing: 0, errors: 0 };
+    let persisted = false; let store = data.source;
+    for (const inst of all) {
+      try {
+        const res = await fetch(`/api/sync?inst=${encodeURIComponent(inst.id)}`, { method: 'POST' });
+        const out = await res.json();
+        if (!out.ok) throw new Error(out.error || `HTTP ${res.status}`);
+        persisted = out.persisted; store = out.store || store;
+        for (const line of (out.log || []).filter((l) => l.startsWith('✓') || l.startsWith('✗') || l.startsWith('   '))) log.push(line);
+        for (const k of Object.keys(totals)) totals[k] += out.counts?.[k] || 0;
+      } catch (e) {
+        totals.errors++;
+        log.push(`✗ ${inst.id}: ${e.message}`);
+      }
+      setSync((s) => ({ ...s, log: [...log] }));
     }
+    log.push('');
+    log.push(`Done — ${totals.updated} programmes updated, ${totals.unchanged} unchanged, ${totals.missing} flagged missing, ${totals.errors} errors.`);
+    log.push('Commission, bonus, target and "best for" were NOT touched (they come from the master sheet).');
+    if (!persisted) log.push('Note: no storage connected yet — this was a read-only preview. Create a Blob store in Vercel (free) to persist.');
+    let at = new Date().toISOString();
+    if (persisted) {
+      try {
+        const fresh = await fetch('/api/institutions', { cache: 'no-store' }).then((r) => r.json());
+        const next = normalise(fresh);
+        setData(next);
+        if (openInst) setOpenInst(next.destinations.flatMap((d) => d.institutions).find((i) => i.id === openInst.id) || null);
+        at = fresh.lastSyncedAt || at;
+      } catch { /* keep what we have */ }
+    }
+    setSync({ running: false, log, at, persisted, store });
   }
 
   return (
@@ -120,6 +203,7 @@ export default function PrimeList({ data }) {
             </button>
             <span className="pi-dim">
               {sync.at ? `Last synced ${new Date(sync.at).toLocaleString()}` : 'Catalogue data · commission and bonus are never overwritten'}
+              {' · '}{sync.persisted ? `saved to ${sync.store === 'blob' ? 'Vercel Blob' : 'database'}` : 'preview only (no storage)'}
             </span>
             {sync.log.length > 0 && <div className="pi-sync-log">{sync.log.join('\n')}</div>}
           </div>
@@ -143,8 +227,8 @@ export default function PrimeList({ data }) {
           <div className="pi-smartbar">
             <span className="pi-dim small"><i className="bi bi-funnel" /> Smart filters</span>
             {SMART.map((s) => (
-              <button key={s.key} type="button"
-                className={'pi-tool' + (smart.includes(s.key) ? ' is-on' : '')}
+              <button key={s.key} type="button" title={s.title || s.label}
+                className={'pi-tool' + (s.hot ? ' pi-tool-hot' : '') + (smart.includes(s.key) ? ' is-on' : '')}
                 onClick={() => toggleSmart(s.key)}>
                 <i className={`bi ${s.icon}`} /> {s.label}
               </button>
@@ -192,6 +276,13 @@ export default function PrimeList({ data }) {
                   )}
 
                   {inst.bestFor && <span className="pi-best"><i className="bi bi-bullseye" /> {inst.bestFor}</span>}
+                  {immediateCount(inst) > 0 && (
+                    <span className={'pi-inst-now' + (onshoreCount(inst) > 0 ? ' is-onshore' : '')}>
+                      <i className="bi bi-broadcast" />
+                      {immediateCount(inst)} programme{immediateCount(inst) === 1 ? '' : 's'} with immediate intake
+                      {onshoreCount(inst) > 0 ? ` · ${onshoreCount(inst)} onshore` : ''}
+                    </span>
+                  )}
                   <div className="pi-inst-foot">
                     <span className="pi-chip-type">{inst.type}</span>
                     <span className="pi-dim small">
@@ -260,11 +351,12 @@ export default function PrimeList({ data }) {
                         <strong>{prog.name}</strong>
                         <i className="bi bi-box-arrow-up-right" />
                       </a>
+                      <IntakeFlash prog={prog} />
                     </div>
                     <div className="pi-prog-meta">
                       <span><i className="bi bi-mortarboard" />{prog.level}</span>
                       {prog.duration && <span><i className="bi bi-hourglass-split" />{prog.duration}</span>}
-                      {prog.intakes && <span><i className="bi bi-calendar-event" />{prog.intakes}</span>}
+                      <IntakeChips prog={prog} />
                       {prog.tuition && <span><i className="bi bi-cash-stack" />{prog.tuition}</span>}
                       {prog.applicationFee && <span><i className="bi bi-receipt" />App fee {prog.applicationFee}</span>}
                       {prog.offerTat && <span><i className="bi bi-stopwatch" />Offer TAT {prog.offerTat}</span>}

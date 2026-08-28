@@ -1,39 +1,85 @@
 # iApply Prime Institutions
 
-Internal tool for iApply partner agents: prime institutions, their programmes,
-commissions and bonuses, with a manual sync from the iApply Program Explorer.
+Internal tool for iApply partner agents: prime institutions, their curated
+programmes, commissions and bonuses, kept in step with the iApply Program
+Explorer catalogue.
 
-## Why this exists as a separate app
-The original page was PHP, which Vercel does not run. This is the same product
-rebuilt in Next.js so it can be hosted on Vercel with Supabase behind it.
+## What the app shows
+- `/` — destination tabs, institution cards, programme popup
+- `/program/<id>` — one shareable page per programme
+- Every programme lists **all intakes the catalogue publishes, each with its
+  status** (`Open`, `Open (Onshore Only)`, `Closed`). An intake in the current
+  month or the next 3 months shows a pulsing **"Intake open now"** pill —
+  **"Intake open now — best for onshore students"** when the catalogue marks it
+  onshore-only. Smart filters **Immediate intakes** and **Onshore only** narrow
+  the list; institution cards show "N programmes with immediate intake".
 
-## Security
-The whole site sits behind HTTP Basic auth (`PRIME_ACCESS_PASSWORD`) because it
-shows commission and bonus figures. If that variable is missing the app returns
-503 and serves nothing — it fails closed, never open.
+## Data flow
+```
+iApply Program Explorer (public, no login)
+   university-list-data.php  -> header + first 3 cards
+   program-data.php          -> remaining cards ("load more")
+            │  paced 2.5 s (the portal firewall blocks bursts)
+            ▼
+   /api/sync  ── matches the CURATED programmes by portalId (fallback: name)
+            │   writes catalogue fields only; never commission / bonus / target / best-for
+            ▼
+   Vercel Blob (free, Vercel-native: one private JSON blob)  ── read by the UI
+   [or Neon Postgres via the Vercel Marketplace, also free]
+            ▲
+   /api/seed  ── master sheet (lib/prime-data.json) -> commission fields
+```
+Without storage connected the app reads `lib/prime-data.json` and **Sync now**
+is a read-only preview that reports what would change.
+
+**Storage modes** (`lib/store.js` picks one from the environment):
+- `BLOB_READ_WRITE_TOKEN` → **Vercel Blob** — recommended. Free on Hobby
+  (≈5 GB, 100 K reads, 10 K writes/month — this app uses a few hundred),
+  hosted by Vercel itself, no other account. Dataset = one private JSON blob
+  (`prime/dataset.json`) plus the last 50 sync runs.
+- `DATABASE_URL` → Neon Postgres (Vercel Marketplace, free) — proper tables,
+  if SQL reporting is ever wanted.
+- neither → bundled JSON, read-only.
+- `PRIME_STORE=blob|neon|json` forces a mode.
+
+The number of programmes per institution is intentional (the curated list in
+`lib/prime-data.json`). Sync refreshes those programmes; it never adds the rest
+of the catalogue. A programme that disappears from the catalogue is kept and
+flagged (`catalogue_missing_since`), never deleted.
 
 ## Environment variables
 | Variable | Required | Purpose |
 |---|---|---|
+| `BLOB_READ_WRITE_TOKEN` | for persistence | injected when a Blob store is connected (recommended) |
+| `DATABASE_URL` | optional | injected by the Vercel ↔ Neon integration instead |
+| `CRON_SECRET` | recommended | protects `GET /api/sync` (cron) and `POST /api/seed` |
 | `PRIME_ACCESS_PASSWORD` | yes | password for the whole site |
-| `NEXT_PUBLIC_SUPABASE_URL` | later | Supabase project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | later | server-side writes during sync |
+
+## One-time setup on Vercel (free)
+1. Project → **Storage** → **Create Database** → **Blob** → access **Private**
+   → connect to this project. Vercel adds `BLOB_READ_WRITE_TOKEN` for you.
+   (Neon Postgres works the same way if you prefer SQL: it adds `DATABASE_URL`.)
+2. Project → **Settings → Environment Variables** → add `CRON_SECRET`
+   (any long random string). Vercel sends it with every cron call.
+3. Deploy (`vercel --prod`). First request creates the tables and seeds them
+   from `lib/prime-data.json`. The cron in `vercel.json` then runs the full
+   sync daily at 01:30 UTC (07:00 IST); **Sync now** runs it on demand.
+
+## Updating commission / bonus (master sheet)
+Edit `lib/prime-data.json`, deploy, then run
+`APP_URL=https://<your-app> CRON_SECRET=<secret> npm run seed`
+(or `POST /api/seed` with the bearer token). Only the locked fields change.
 
 ## Routes
-- `/` — destination tabs, institution cards, programme popup
-- `/program/<id>` — one page per programme; opens in a new tab, so every
-  programme has its own shareable URL (this is what solves the unique-id issue)
-- `/api/sync` — POST; pulls fresh catalogue data from iApply, paced to avoid the
-  portal's rate limiting. **Never touches commission or bonus fields.**
-
-## Data
-`lib/prime-data.json` holds the current dataset (7 destinations, 24
-institutions, 82 programmes). Commission and bonus values come from the master
-product sheet and are maintained by hand; everything else can be refreshed with
-the Sync now button.
+- `POST /api/sync?inst=<id>` — sync one institution (the UI calls this per
+  institution so the log streams); `POST /api/sync` — all 22
+- `GET /api/sync` — same, for Vercel Cron (needs `Authorization: Bearer CRON_SECRET`)
+- `POST /api/seed` — master sheet → database (bearer token)
+- `GET /api/institutions` — current dataset as JSON
 
 ## Local development
 ```bash
 npm install
-PRIME_ACCESS_PASSWORD=testpass npm run dev
+PRIME_ACCESS_PASSWORD=testpass npm run dev        # JSON mode
+DATABASE_URL=postgres://... npm run dev            # database mode
 ```

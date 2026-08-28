@@ -1,106 +1,93 @@
 import { NextResponse } from 'next/server';
-import data from '../../../lib/prime-data.json';
+import { UNI, fetchInstitution } from '../../../lib/catalogue';
+import { isPersistent, storeKind, loadData, applyInstitution, diffInstitution, recordRun } from '../../../lib/store';
 
-export const maxDuration = 60; // seconds (Vercel)
+// Vercel Hobby allows up to 300 s per invocation with Fluid compute; a full
+// 22-institution run at 2.5 s pacing takes ~2.5 min. Single-institution calls
+// (what the UI uses) finish in a few seconds.
+export const maxDuration = 300;
+export const dynamic = 'force-dynamic';
 
-const UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
-
-// Catalogue university ids, captured from the Program Explorer filter list.
-const UNI = {
-  nbcc: [1, 170], centennial: [1, 2], norquest: [1, 95], durham: [1, 106], humber: [1, 1],
-  'alexander-burnaby': [1, 146], crandall: [1, 410], langara: [1, 188], sheridan: [1, 123],
-  laurier: [1, 69], dalhousie: [1, 187], ucw: [1, 224], uottawa: [1, 460], capilano: [1, 162],
-  'niagara-college': [1, 118], lethbridge: [1, 70],
-  hertfordshire: [5, 716], 'uwe-bristol': [5, 729], brighton: [5, 1567],
-  sunderland: [5, 1337], 'qmu-edinburgh': [5, 1602], bedfordshire: [5, 712],
-};
-
+const PACE_MS = 2500; // the portal's firewall blocks bursts faster than ~2 s
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function fetchUniversity(cId, uId) {
-  const res = await fetch('https://iapply.io/university-list-data.php?v=1', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': UA,
-      Referer: 'https://iapply.io/program-explorer',
-    },
-    body: 'data_filters=' + encodeURIComponent(JSON.stringify({ c_id: String(cId), u_id: uId })),
-    cache: 'no-store',
-  });
-  return res.ok ? res.text() : '';
-}
-
-// Minimal, dependency-free extraction of the fields we sync.
-function parse(html) {
-  const out = { logo: null, programs: [] };
-  const logo = html.match(/logo-circle[\s\S]{0,200}?<img[^>]+src="([^"]+)"/i);
-  if (logo) out.logo = logo[1];
-  const cards = html.split('card-custom').slice(1);
-  for (const c of cards) {
-    const name = c.match(/card-title[^>]*>([^<]+)</);
-    const level = c.match(/card-subtitle[^>]*>([^<]+)</);
-    const fee = c.match(/((?:CAD|GBP|EUR|AUD)\s[\d,]+)/);
-    const dur = c.match(/(\d+)\s*Months/);
-    const tat = c.match(/(\d+)\s*days/);
-    const pid = c.match(/programDetail\((\d+)\)/);
-    if (name) {
-      out.programs.push({
-        portalId: pid ? Number(pid[1]) : null,
-        name: name[1].trim(),
-        level: level ? level[1].trim() : null,
-        tuition: fee ? fee[1] : null,
-        durationMonths: dur ? Number(dur[1]) : null,
-        offerTatDays: tat ? Number(tat[1]) : null,
-      });
-    }
+function authorised(req) {
+  // Cron / external callers must present CRON_SECRET; the in-app button is a
+  // same-origin POST and is allowed as before.
+  const secret = process.env.CRON_SECRET;
+  const auth = req.headers.get('authorization') || '';
+  if (secret && auth === `Bearer ${secret}`) return true;
+  if (req.method === 'POST' && !req.headers.get('authorization')) {
+    const origin = req.headers.get('origin') || '';
+    const host = req.headers.get('host') || '';
+    return !origin || origin.endsWith(host);
   }
-  return out;
+  return !secret; // no secret configured -> open (dev)
 }
 
-export async function POST() {
+async function runSync({ instIds, trigger }) {
+  const startedAt = new Date().toISOString();
   const log = [];
-  const results = {};
-  let ok = 0, failed = 0;
+  const say = (s) => log.push(s);
+  const data = await loadData();
+  const allInsts = data.destinations.flatMap((d) => d.institutions);
+  const targets = allInsts.filter((i) => instIds.includes(i.id));
+  const totals = { institutions: targets.length, updated: 0, unchanged: 0, missing: 0, errors: 0 };
+  const preview = {};
 
-  const entries = Object.entries(UNI);
-  log.push(`Syncing ${entries.length} institutions from the iApply catalogue…`);
+  say(`Syncing ${targets.length} institution${targets.length === 1 ? '' : 's'} from the iApply catalogue…`);
 
-  for (const [id, [cId, uId]] of entries) {
+  for (let n = 0; n < targets.length; n++) {
+    const inst = targets[n];
+    const ids = UNI[inst.id] || (inst.portalUniId ? [inst.portalCountryId, inst.portalUniId] : null);
+    if (!ids) { say(`✗ ${inst.id}: no catalogue id`); totals.errors++; continue; }
     try {
-      const html = await fetchUniversity(cId, uId);
-      if (!html || html.length < 1500 || /403 Forbidden/i.test(html)) {
-        failed++;
-        log.push(`✗ ${id}: blocked or empty response (portal rate limit) — kept existing data`);
+      const catalogue = await fetchInstitution(ids[0], ids[1], { pace: PACE_MS });
+      let r;
+      if (isPersistent()) {
+        r = await applyInstitution(inst.id, catalogue, { log: say });
       } else {
-        const parsed = parse(html);
-        results[id] = parsed;
-        ok++;
-        log.push(`✓ ${id}: ${parsed.programs.length} programmes${parsed.logo ? ', logo found' : ''}`);
+        const { patches, missing } = diffInstitution(inst.programs, catalogue.programs);
+        r = { updated: patches.filter((p) => p.changed.length).length, unchanged: patches.filter((p) => !p.changed.length).length, missing: missing.length };
+        preview[inst.id] = { patches: patches.filter((p) => p.changed.length), missing: missing.map((m) => m.name) };
+        for (const p of patches.filter((x) => x.changed.length)) say(`   · ${p.name}: ${p.changed.join(', ')}`);
+        for (const m of missing) say(`   ! ${m.name}: not found in the catalogue any more (kept, flagged)`);
       }
+      totals.updated += r.updated; totals.unchanged += r.unchanged; totals.missing += r.missing;
+      say(`✓ ${inst.id}: catalogue lists ${catalogue.total ?? catalogue.programs.length}, curated ${inst.programs.length} → ${r.updated} updated, ${r.unchanged} unchanged${r.missing ? `, ${r.missing} missing` : ''}`);
     } catch (e) {
-      failed++;
-      log.push(`✗ ${id}: ${e.message}`);
+      totals.errors++;
+      say(`✗ ${inst.id}: ${e.message} — kept existing data`);
+      if (e.blocked) await sleep(10000); // back off before the next institution
     }
-    await sleep(1200); // pace requests so the portal's WAF does not block us
+    if (n < targets.length - 1) await sleep(PACE_MS);
   }
 
-  log.push('');
-  log.push(`Done — ${ok} synced, ${failed} skipped.`);
-  log.push('Commission and bonus values were NOT touched (they come from the master sheet).');
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    log.push('Note: no database configured yet, so this run is read-only (preview of what would update).');
-  }
+  say('');
+  say(`Done — ${totals.updated} programmes updated, ${totals.unchanged} unchanged, ${totals.missing} flagged missing, ${totals.errors} institution errors.`);
+  say('Commission, bonus, target and "best for" were NOT touched (they come from the master sheet).');
+  if (!isPersistent()) say('Note: no storage connected (BLOB_READ_WRITE_TOKEN / DATABASE_URL), so this run is a read-only preview — create a Blob store in Vercel to persist.');
+  else await recordRun({ startedAt, trigger, ...totals, log });
 
-  return NextResponse.json({
-    ok: true,
-    finishedAt: new Date().toISOString(),
-    counts: { synced: ok, skipped: failed, institutions: entries.length },
-    log,
-    // returned so the UI can show a diff before anything is written
-    results,
-    unchangedFields: ['commission', 'commissionDetail', 'hasBonus', 'bonusShort'],
-    baseline: data.generatedAt,
-  });
+  return { ok: true, startedAt, finishedAt: new Date().toISOString(), persisted: isPersistent(), store: storeKind(), counts: totals, log, preview,
+    unchangedFields: ['commission', 'commissionDetail', 'hasBonus', 'bonusShort', 'bestFor'] };
+}
+
+function pickTargets(req) {
+  const url = new URL(req.url);
+  const inst = url.searchParams.get('inst');
+  return inst ? inst.split(',').map((s) => s.trim()).filter(Boolean) : Object.keys(UNI);
+}
+
+export async function POST(req) {
+  if (!authorised(req)) return NextResponse.json({ ok: false, error: 'unauthorised' }, { status: 401 });
+  const out = await runSync({ instIds: pickTargets(req), trigger: 'manual' });
+  return NextResponse.json(out);
+}
+
+// Vercel Cron calls GET with `Authorization: Bearer $CRON_SECRET`.
+export async function GET(req) {
+  if (!authorised(req)) return NextResponse.json({ ok: false, error: 'unauthorised' }, { status: 401 });
+  const out = await runSync({ instIds: pickTargets(req), trigger: 'cron' });
+  return NextResponse.json(out);
 }

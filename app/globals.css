@@ -413,3 +413,66 @@ button { font: inherit; cursor: pointer; }
 }
 .pi-topnav a:hover { color: var(--green-dark); background: var(--mint); }
 .pi-topnav .is-on { color: var(--ink); background: var(--bg); }
+
+/* ------------------------------------------------- intakes & onshore flash --- */
+/* Programme pill for an intake that is open in the current / coming months.   */
+.pi-intake-flash {
+  position: relative; overflow: hidden;
+  display: inline-flex; align-items: center; gap: .4rem; flex-wrap: wrap;
+  margin-top: .45rem; padding: .3rem .7rem .3rem .6rem;
+  border-radius: 999px; font-size: .74rem; line-height: 1.2;
+  border: 1.5px solid transparent;
+}
+.pi-intake-flash b { font-weight: 800; letter-spacing: .01em; }
+.pi-intake-flash-detail {
+  font-weight: 700; opacity: .9;
+  border-left: 1px solid rgba(255,255,255,.5); padding-left: .45rem;
+}
+.pi-intake-flash i { font-size: .8rem; }
+.pi-intake-flash.is-open {
+  background: linear-gradient(100deg, #15803d, #22c55e 60%, #4ade80);
+  color: #fff; box-shadow: 0 2px 12px rgba(34, 197, 94, .45);
+  animation: pi-pulse-green 1.8s ease-in-out infinite;
+}
+.pi-intake-flash.is-onshore {
+  background: linear-gradient(100deg, #9a3412, #f97316 55%, #fb923c);
+  color: #fff; box-shadow: 0 2px 14px rgba(249, 115, 22, .55);
+  animation: pi-pulse-orange 1.6s ease-in-out infinite;
+}
+.pi-intake-flash::after {
+  content: ''; position: absolute; top: 0; left: -120%;
+  width: 55%; height: 100%; transform: skewX(-20deg);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.7), transparent);
+  animation: pishine 2.6s ease-in-out infinite;
+}
+@keyframes pi-pulse-green  { 50% { box-shadow: 0 0 0 6px rgba(34, 197, 94, .18), 0 2px 12px rgba(34, 197, 94, .45); } }
+@keyframes pi-pulse-orange { 50% { box-shadow: 0 0 0 6px rgba(249, 115, 22, .2), 0 2px 14px rgba(249, 115, 22, .55); } }
+@media (prefers-reduced-motion: reduce) {
+  .pi-intake-flash, .pi-intake-flash::after { animation: none; }
+}
+
+/* All intakes the catalogue lists for a programme. */
+.pi-intakes { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .3rem; }
+.pi-intake {
+  display: inline-block; padding: .05rem .5rem; border-radius: 999px;
+  border: 1px solid var(--line); background: #fff; color: var(--ink);
+  font-size: .74rem; font-weight: 600; white-space: nowrap;
+}
+.pi-intake.is-soon { border-color: var(--green); background: var(--mint); color: var(--green-dark); font-weight: 800; }
+.pi-intake.is-onshore { border-color: #f97316; background: #fff7ed; color: #9a3412; }
+.pi-intake.is-past { opacity: .5; text-decoration: line-through; }
+
+/* Institution card: how many programmes can be pitched right now. */
+.pi-inst-now {
+  display: inline-flex; align-items: center; gap: .4rem;
+  margin-top: .5rem; padding: .28rem .7rem; border-radius: 999px;
+  background: var(--mint); border: 1.5px solid #86efac; color: var(--green-dark);
+  font-size: .76rem; font-weight: 800;
+}
+.pi-inst-now i { animation: piflash 1.6s ease-in-out infinite; }
+.pi-inst-now.is-onshore { background: #fff7ed; border-color: #fdba74; color: #9a3412; }
+
+/* Smart-filter chips that deal with timing get a warm accent. */
+.pi-tool.pi-tool-hot { border-color: #fdba74; color: #c2410c; background: #fff7ed; }
+.pi-tool.pi-tool-hot:hover { border-color: #f97316; }
+.pi-tool.pi-tool-hot.is-on { background: #f97316; border-color: #f97316; color: #fff; }
