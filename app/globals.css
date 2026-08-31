@@ -476,3 +476,129 @@ button { font: inherit; cursor: pointer; }
 .pi-tool.pi-tool-hot { border-color: #fdba74; color: #c2410c; background: #fff7ed; }
 .pi-tool.pi-tool-hot:hover { border-color: #f97316; }
 .pi-tool.pi-tool-hot.is-on { background: #f97316; border-color: #f97316; color: #fff; }
+
+/* --------------------------------------------------- shareable programme --- */
+/* The readable URL under a programme title, e.g.
+   /canada/crandall-university/master-of-management                            */
+.pi-prog-path {
+  display: flex; align-items: center; gap: .25rem;
+  margin: -.15rem 0 .35rem; font-size: .72rem; color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+.pi-prog-path i { color: var(--green-dark); font-size: .85rem; }
+
+/* Share row on the programme page. */
+.pi-share {
+  display: flex; align-items: center; flex-wrap: wrap; gap: .5rem;
+  border: 1.5px dashed var(--line); border-radius: 12px;
+  padding: .6rem .9rem; margin: 1rem 0;
+  background: #fff;
+}
+.pi-share.is-block { width: 100%; }
+.pi-share > i { color: var(--green-dark); font-size: 1.1rem; }
+.pi-share-label { font-weight: 800; font-size: .84rem; }
+.pi-share-url {
+  flex: 1 1 260px; min-width: 0;
+  font-size: .8rem; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; padding: .25rem .5rem;
+  overflow-x: auto; white-space: nowrap;
+}
+.pi-btn.is-active { border-color: var(--green); color: var(--green-dark); background: var(--mint); }
+
+/* =========================================================================
+   MOBILE
+   The sheet is full screen on a phone, so it needs a real way back: a Back
+   bar at the top (plus the phone's own back button, wired up in JS).
+   ========================================================================= */
+.pi-sheet-back { display: none; }
+
+@media (max-width: 899.98px) {
+  .pi-sheet-back {
+    display: flex; align-items: center; gap: .4rem;
+    width: 100%; flex: none;
+    background: var(--green); color: #fff; border: 0;
+    font-size: .95rem; font-weight: 700; text-align: left;
+    padding: max(.9rem, env(safe-area-inset-top)) 1rem .9rem;
+    position: sticky; top: 0; z-index: 5;
+  }
+  .pi-sheet-back i { font-size: 1.1rem; }
+
+  /* header becomes compact so the list starts higher up the screen */
+  .pi-modal-head { padding: .8rem 1rem; gap: .6rem; }
+  .pi-modal-head .pi-close { display: none; }      /* Back bar replaces it */
+  .pi-inst-id .pi-logo { width: 40px; height: 40px; }
+  .pi-modal-head strong { font-size: .95rem; line-height: 1.25; }
+  .pi-modal-head .pi-dim { font-size: .75rem; }
+
+  /* filters and sort scroll sideways instead of stacking three rows deep */
+  .pi-toolbar {
+    flex-wrap: nowrap; overflow-x: auto; gap: .5rem;
+    padding: .6rem .8rem; scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .pi-toolbar::-webkit-scrollbar { display: none; }
+  .pi-toolbar-group { flex-wrap: nowrap; flex: none; }
+  .pi-tool { white-space: nowrap; padding: .5rem 1rem; font-size: .82rem; }
+
+  /* destination tabs scroll sideways too */
+  .pi-tabs {
+    flex-wrap: nowrap; overflow-x: auto; padding-bottom: .5rem;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .pi-tabs::-webkit-scrollbar { display: none; }
+  .pi-tab { flex: none; }
+
+  .pi-modal-body { padding: .9rem .8rem 2rem; gap: .8rem; }
+  .pi-prog { padding: .9rem; }
+
+  /* full-width, thumb-sized actions */
+  .pi-prog-ctas { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+  .pi-prog-ctas .pi-btn { justify-content: center; padding: .7rem .6rem; font-size: .82rem; }
+  .pi-prog-ctas .pi-btn:last-child { grid-column: 1 / -1; }
+
+  /* institution grid: one clear card per row */
+  .pi-grid { grid-template-columns: 1fr; gap: .8rem; }
+  .pi-main { padding: 1rem .8rem 2rem; }
+  .pi-head h1 { font-size: 1.25rem; }
+
+  /* top bar stays usable */
+  .pi-topbar { padding: .6rem .8rem; }
+  .pi-topnav { margin-left: .4rem; gap: .1rem; }
+  .pi-topnav a, .pi-topnav span { padding: .4rem .6rem; font-size: .82rem; }
+  .pi-topbar img { height: 24px; }
+
+  .pi-syncbar { padding: .7rem .8rem; }
+  .pi-comm { flex-wrap: wrap; }
+}
+
+/* very small phones */
+@media (max-width: 380px) {
+  .pi-prog-ctas { grid-template-columns: 1fr; }
+  .pi-prog-ctas .pi-btn:last-child { grid-column: auto; }
+  .pi-topnav a, .pi-topnav span { padding: .35rem .5rem; font-size: .78rem; }
+}
+
+/* comfortable tap targets on any touch device */
+@media (hover: none) {
+  .pi-btn, .pi-tool, .pi-tab, .pi-close { min-height: 40px; }
+}
+
+/* Flex children default to min-width:auto, so a wide row (the destination
+   tabs) stretches the whole page. Let them shrink and scroll instead. */
+.pi-shell, .pi-main { min-width: 0; }
+.pi-tabs, .pi-toolbar, .pi-grid, .pi-syncbar { max-width: 100%; min-width: 0; }
+
+@media (max-width: 899.98px) {
+  .pi-topbar { flex-wrap: nowrap; gap: .5rem; }
+  .pi-topbar-right { flex: none; gap: .4rem; }
+  .pi-topbar-right .pi-btn { padding: .45rem .7rem; font-size: .8rem; }
+  .pi-topnav { flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .pi-topnav::-webkit-scrollbar { display: none; }
+  .pi-topnav a, .pi-topnav span { white-space: nowrap; }
+}
+
+.pi-noresult {
+  display: flex; flex-direction: column; align-items: center; gap: .8rem;
+  text-align: center; padding: 1.6rem 1rem;
+}

@@ -1,7 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { classifyIntakes, intakeFlash, isOnshore, normaliseProgramIntakes, IMMEDIATE_WINDOW_MONTHS } from '../lib/intakes';
+import { ensureSlugs } from '../lib/slug';
+import CopyLink from './CopyLink';
 
 const NOW = () => new Date();
 
@@ -86,13 +88,14 @@ const SMART = [
 const immediateCount = (inst) => inst.programs.filter((p) => classifyIntakes(p.intakeList, NOW()).immediate.length > 0).length;
 const onshoreCount = (inst) => inst.programs.filter((p) => classifyIntakes(p.intakeList, NOW()).onshore.length > 0).length;
 
-const normalise = (data) => ({
-  ...data,
-  destinations: data.destinations.map((d) => ({
-    ...d,
-    institutions: d.institutions.map((i) => ({ ...i, programs: i.programs.map(normaliseProgramIntakes) })),
-  })),
-});
+const normalise = (data) =>
+  ensureSlugs({
+    ...data,
+    destinations: data.destinations.map((d) => ({
+      ...d,
+      institutions: d.institutions.map((i) => ({ ...i, programs: i.programs.map(normaliseProgramIntakes) })),
+    })),
+  });
 
 export default function PrimeList({ data: initial }) {
   const [data, setData] = useState(() => normalise(initial));
@@ -105,6 +108,37 @@ export default function PrimeList({ data: initial }) {
   const [sort, setSort] = useState('tf');
   const [dir, setDir] = useState(-1);
   const [shortlist, setShortlist] = useState([]);
+
+  /* --- phone back button closes the open sheet -----------------------------
+     Each sheet pushes a history entry, so Android's back gesture (and the
+     browser back arrow) dismisses it instead of leaving the page. */
+  const anySheet = Boolean(openInst || commInst);
+  const closeSheets = useCallback(() => { setCommInst(null); setOpenInst(null); }, []);
+
+  useEffect(() => {
+    if (!anySheet) return undefined;
+    window.history.pushState({ piSheet: true }, '');
+    const onPop = () => closeSheets();
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      // if the sheet was closed from the UI, drop the history entry we added
+      if (window.history.state && window.history.state.piSheet) window.history.back();
+    };
+  }, [anySheet, closeSheets]);
+
+  // Escape closes, and the page behind must not scroll while a sheet is open
+  useEffect(() => {
+    if (!anySheet) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') closeSheets(); };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [anySheet, closeSheets]);
   const [sync, setSync] = useState({ running: false, log: [], at: data.lastSyncedAt || null, persisted: data.source === 'database' || data.source === 'blob', store: data.source });
 
   const dest = destinations.find((d) => d.code === destCode);
@@ -311,6 +345,10 @@ export default function PrimeList({ data: initial }) {
         <div className="pi-modal" role="dialog" aria-modal="true">
           <div className="pi-modal-backdrop" onClick={() => setOpenInst(null)} />
           <div className="pi-modal-panel">
+            {/* phone-first header: a real Back control, not just a small x */}
+            <button type="button" className="pi-sheet-back" onClick={() => setOpenInst(null)}>
+              <i className="bi bi-chevron-left" /> Back to institutions
+            </button>
             <div className="pi-modal-head">
               <div className="pi-inst-id">
                 <Logo inst={openInst} />
@@ -343,6 +381,23 @@ export default function PrimeList({ data: initial }) {
                   Offer speed <i className="bi bi-arrow-up-short" />
                 </button>
               </div>
+
+              {/* filters chosen on the list still apply in here - show them so
+                  an empty result is never a mystery, especially on a phone */}
+              {smart.length > 0 && (
+                <div className="pi-toolbar-group" aria-label="Filters carried from the list">
+                  {smart.map((k) => {
+                    const s = SMART.find((x) => x.key === k);
+                    return (
+                      <button key={k} type="button" className="pi-tool is-on"
+                        title="Remove this filter"
+                        onClick={() => setSmart(smart.filter((x) => x !== k))}>
+                        {s ? s.label : k} <i className="bi bi-x-lg" />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="pi-modal-body">
@@ -351,11 +406,14 @@ export default function PrimeList({ data: initial }) {
                 return (
                   <div className="pi-prog" key={prog.id}>
                     <div className="pi-prog-title">
-                      <a className="pi-prog-link" href={`/program/${prog.id}`} target="_blank" rel="noopener noreferrer">
+                      <a className="pi-prog-link" href={prog.path} target="_blank" rel="noopener noreferrer">
                         <strong>{prog.name}</strong>
                         <i className="bi bi-box-arrow-up-right" />
                       </a>
                       <IntakeFlash prog={prog} />
+                    </div>
+                    <div className="pi-prog-path" title="Shareable link for this programme">
+                      <i className="bi bi-link-45deg" />{prog.path}
                     </div>
                     <div className="pi-prog-meta">
                       <span><i className="bi bi-mortarboard" />{prog.level}</span>
@@ -391,9 +449,10 @@ export default function PrimeList({ data: initial }) {
                         onClick={() => toggleShortlist(key)}>
                         <i className="bi bi-bookmark-heart" /> <span>{shortlist.includes(key) ? 'Shortlisted' : 'Shortlist'}</span>
                       </button>
-                      <a className="pi-btn pi-btn-ghost" href={`/program/${prog.id}`} target="_blank" rel="noopener noreferrer">
+                      <a className="pi-btn pi-btn-ghost" href={prog.path} target="_blank" rel="noopener noreferrer">
                         <i className="bi bi-clipboard-check" /> See details
                       </a>
+                      <CopyLink path={prog.path} compact />
                       <a className="pi-btn pi-btn-primary" href={portalUrl(openInst)} target="_blank" rel="noopener noreferrer">
                         <i className="bi bi-send-fill" /> Apply now
                       </a>
@@ -402,9 +461,16 @@ export default function PrimeList({ data: initial }) {
                 );
               })}
               {programs.length === 0 && (
-                <p className="pi-dim" style={{ textAlign: 'center', padding: '1rem' }}>
-                  No programme matches the current filters.
-                </p>
+                <div className="pi-noresult">
+                  <p className="pi-dim">
+                    None of {openInst.name}&rsquo;s {openInst.programs.length} programmes match the
+                    filters you have on.
+                  </p>
+                  <button type="button" className="pi-btn pi-btn-primary"
+                    onClick={() => { setSmart([]); setFilter('all'); }}>
+                    <i className="bi bi-x-circle" /> Clear filters and show all
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -415,6 +481,9 @@ export default function PrimeList({ data: initial }) {
         <div className="pi-modal" role="dialog" aria-modal="true">
           <div className="pi-modal-backdrop" onClick={() => setCommInst(null)} />
           <div className="pi-modal-panel pi-panel-sm">
+            <button type="button" className="pi-sheet-back" onClick={() => setCommInst(null)}>
+              <i className="bi bi-chevron-left" /> Back
+            </button>
             <div className="pi-modal-head">
               <strong><i className="bi bi-cash-coin" /> Commission — {commInst.name}</strong>
               <button type="button" className="pi-close" onClick={() => setCommInst(null)} aria-label="Close">

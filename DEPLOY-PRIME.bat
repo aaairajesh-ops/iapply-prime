@@ -51,7 +51,7 @@ if errorlevel 1 ( echo npm install failed. & pause & exit /b 1 )
 echo.
 echo [2/4] Committing to git (repo: aaairajesh-ops/iapply-prime)...
 git add -A
-git commit -m "Intake flash, Vercel Blob storage, real catalogue sync" >nul 2>&1
+git commit -m "Shareable programme URLs: /destination/university/programme + Copy link" >nul 2>&1
 if errorlevel 1 echo (nothing new to commit - continuing)
 
 echo.
