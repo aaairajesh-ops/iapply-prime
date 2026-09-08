@@ -68,6 +68,19 @@ function Logo({ inst }) {
   );
 }
 
+// Counselling support desk, shown at the top per destination. These replace the
+// per-university phone chips, which repeated the same number on every card.
+const COUNSELLORS = {
+  uk: [
+    { name: 'Kamini Sharma', phone: '7986679007' },
+    { name: 'Drushti Soni', phone: '7740055154' },
+  ],
+  canada: [
+    { name: 'Vaishali Verma', phone: '6239257840' },
+    { name: 'Aradhana', phone: '7009985591' },
+  ],
+};
+
 // Smart filters run only on fields the catalogue actually publishes.
 const SMART = [
   { key: 'scholarship', label: 'Scholarship available', icon: 'bi-award', test: (p) => p.features.includes('scholarship') },
@@ -108,6 +121,8 @@ export default function PrimeList({ data: initial }) {
   const [sort, setSort] = useState('tf');
   const [dir, setDir] = useState(-1);
   const [shortlist, setShortlist] = useState([]);
+  const [syncOpen, setSyncOpen] = useState(false);
+  const counsellors = COUNSELLORS[destCode] || [];
 
   /* --- phone back button closes the open sheet -----------------------------
      Each sheet pushes a history entry, so Android's back gesture (and the
@@ -218,32 +233,31 @@ export default function PrimeList({ data: initial }) {
           <span className="pi-btn pi-btn-light">
             <i className="bi bi-bookmark-heart" /> Shortlist <span className="pi-count">{shortlist.length}</span>
           </span>
+          {/* sync lives up here now and opens in a dialog, so the page itself
+              stays free for products */}
+          <button type="button" className="pi-icon-btn" title="Sync from the iApply catalogue"
+            aria-label="Sync from the iApply catalogue" onClick={() => setSyncOpen(true)}>
+            <i className={sync.running ? 'bi bi-arrow-repeat pi-spin' : 'bi bi-cloud-download'} />
+          </button>
           <span className="pi-avatar"><i className="bi bi-person-fill" /></span>
         </div>
       </header>
 
       <div className="pi-shell">
         <main className="pi-main">
-          <div className="pi-head">
-            <div>
-              <h1>Prime Institutions</h1>
-              <p>
-                Programme data is read from the iApply Program Explorer catalogue.{' '}
-                <span className="pi-sample-badge">Commission from the master sheet</span>
-              </p>
-            </div>
-          </div>
-
-          <div className="pi-syncbar">
-            <button type="button" className="pi-btn pi-btn-primary" onClick={runSync} disabled={sync.running}>
-              <i className={sync.running ? 'bi bi-arrow-repeat' : 'bi bi-cloud-download'} />
-              {sync.running ? ' Syncing…' : ' Sync now'}
-            </button>
-            <span className="pi-dim">
-              {sync.at ? `Last synced ${new Date(sync.at).toLocaleString()}` : 'Catalogue data · commission and bonus are never overwritten'}
-              {' · '}{sync.persisted ? `saved to ${sync.store === 'blob' ? 'Vercel Blob' : 'database'}` : 'preview only (no storage)'}
-            </span>
-            {sync.log.length > 0 && <div className="pi-sync-log">{sync.log.join('\n')}</div>}
+          {/* one compact strip: title + this country's counselling contacts */}
+          <div className="pi-pagebar">
+            <h1>Prime Institutions</h1>
+            {counsellors.length > 0 && (
+              <div className="pi-counsel">
+                <span className="pi-counsel-label"><i className="bi bi-headset" /> {dest.name} counselling</span>
+                {counsellors.map((c) => (
+                  <a key={c.phone} className="pi-counsel-person" href={`tel:${c.phone.replace(/[^+0-9]/g, '')}`}>
+                    <b>{c.name}</b><span>{c.phone}</span>
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="pi-tabs" role="tablist">
@@ -291,17 +305,21 @@ export default function PrimeList({ data: initial }) {
                     setOpenInst(inst); setSort('tf'); setDir(-1);
                   }}
                   onKeyDown={(e) => { if (e.key === 'Enter') setOpenInst(inst); }}>
-                  <div className="pi-inst-top">
+                  {/* phone numbers now live once at the top of the page */}
+                  {immediateCount(inst) > 0 && (
+                    <span className={'pi-now-dot' + (onshoreCount(inst) > 0 ? ' is-onshore' : '')}
+                      title={`${immediateCount(inst)} programme${immediateCount(inst) === 1 ? '' : 's'} with an immediate intake`
+                        + (onshoreCount(inst) > 0 ? ` · ${onshoreCount(inst)} onshore` : '')}>
+                      <i className="bi bi-broadcast" />{immediateCount(inst)} now
+                    </span>
+                  )}
+                  <div className="pi-inst-head">
                     <Logo inst={inst} />
-                    {dest.code === 'uk' && inst.contact && (
-                      <span className="pi-contact">
-                        <i className="bi bi-telephone-fill" />
-                        <a className="pi-contact-num" href={`tel:${inst.contact.replace(/[^+0-9]/g, '')}`}>{inst.contact}</a>
-                      </span>
-                    )}
+                    <div className="pi-inst-id-min">
+                      <strong>{inst.name}</strong>
+                      <span className="pi-dim">{inst.campus} · {inst.city}</span>
+                    </div>
                   </div>
-                  <div className="pi-inst-title"><strong>{inst.name}</strong></div>
-                  <div className="pi-dim">{inst.campus} · {inst.city}</div>
 
                   {inst.commission && (
                     <div className={'pi-comm pi-comm-mini' + (inst.hasBonus ? ' has-bonus' : '')}
@@ -314,13 +332,6 @@ export default function PrimeList({ data: initial }) {
                   )}
 
                   {inst.bestFor && <span className="pi-best"><i className="bi bi-bullseye" /> {inst.bestFor}</span>}
-                  {immediateCount(inst) > 0 && (
-                    <span className={'pi-inst-now' + (onshoreCount(inst) > 0 ? ' is-onshore' : '')}>
-                      <i className="bi bi-broadcast" />
-                      {immediateCount(inst)} programme{immediateCount(inst) === 1 ? '' : 's'} with immediate intake
-                      {onshoreCount(inst) > 0 ? ` · ${onshoreCount(inst)} onshore` : ''}
-                    </span>
-                  )}
                   <div className="pi-inst-foot">
                     <span className="pi-chip-type">{inst.type}</span>
                     <span className="pi-dim small">
@@ -356,7 +367,6 @@ export default function PrimeList({ data: initial }) {
                   <strong>{openInst.name}</strong>
                   <div className="pi-dim">
                     {openInst.campus} · {openInst.city} · {openInst.type}
-                    {dest.code === 'uk' && openInst.contact ? ` · ☎ ${openInst.contact}` : ''}
                   </div>
                 </div>
               </div>
@@ -505,6 +515,45 @@ export default function PrimeList({ data: initial }) {
                     <b>{val}</b>
                   </div>
                 ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------- sync, in a dialog instead of on the page ---------- */}
+      {syncOpen && (
+        <div className="pi-modal" role="dialog" aria-modal="true">
+          <div className="pi-modal-backdrop" onClick={() => setSyncOpen(false)} />
+          <div className="pi-modal-panel pi-panel-sm">
+            <button type="button" className="pi-sheet-back" onClick={() => setSyncOpen(false)}>
+              <i className="bi bi-chevron-left" /> Back
+            </button>
+            <div className="pi-modal-head">
+              <strong><i className="bi bi-cloud-download" /> Sync from the iApply catalogue</strong>
+              <button type="button" className="pi-close" onClick={() => setSyncOpen(false)} aria-label="Close">
+                <i className="bi bi-x-lg" />
+              </button>
+            </div>
+            <div className="pi-modal-body">
+              <p className="pi-dim small" style={{ margin: 0 }}>
+                {sync.at
+                  ? `Last synced ${new Date(sync.at).toLocaleString()}`
+                  : 'Not synced in this session yet'}
+                {' · '}
+                {sync.persisted
+                  ? `saved to ${sync.store === 'blob' ? 'Vercel Blob' : 'database'}`
+                  : 'preview only (no storage connected)'}
+              </p>
+              <p className="pi-dim small" style={{ margin: '.4rem 0 0' }}>
+                Refreshes fees, intakes, offer TAT and badges. Commission, bonus and
+                &ldquo;best for&rdquo; come from the master sheet and are never overwritten.
+              </p>
+              <button type="button" className="pi-btn pi-btn-primary" style={{ marginTop: '.9rem' }}
+                onClick={runSync} disabled={sync.running}>
+                <i className={sync.running ? 'bi bi-arrow-repeat pi-spin' : 'bi bi-cloud-download'} />
+                {sync.running ? ' Syncing…' : ' Sync now'}
+              </button>
+              {sync.log.length > 0 && <div className="pi-sync-log">{sync.log.join('\n')}</div>}
             </div>
           </div>
         </div>
