@@ -49,8 +49,8 @@ export default async function ProgramPage({ params }) {
 
   // Deep link into the portal. When we hold the catalogue's own programme id we
   // pass it through, so the portal can open that exact card.
-  const portalUrl = inst.portalUniId
-    ? `https://iapply.io/outreachs/search-program?c_id=${inst.portalCountryId}&u_id=${inst.portalUniId}`
+  const portalUrl = (prog.campusId || inst.portalUniId)
+    ? `https://iapply.io/outreachs/search-program?c_id=${inst.portalCountryId}&u_id=${prog.campusId || inst.portalUniId}`
     : 'https://iapply.io/outreachs/search-program';
 
   const cells = [
@@ -75,7 +75,7 @@ export default async function ProgramPage({ params }) {
     prog.applicationFee ? ['Application fee', prog.applicationFee] : null,
     prog.offerTat ? ['Offer letter TAT', prog.offerTat] : null,
     ['Institution type', inst.type],
-    ['Campus', `${inst.campus} · ${inst.city}`],
+    ['Campus', `${prog.campus || inst.campus} · ${inst.city}`],
   ].filter(Boolean);
 
   return (
@@ -109,15 +109,13 @@ export default async function ProgramPage({ params }) {
       {/* One tap to copy this page's link for the team / a student. */}
       <CopyLink path={prog.path} label="Share this programme" block />
 
-      {prog.commission && (
+      {/* the institution's rate from the master sheet — one source of truth */}
+      {inst.commission && (
         <div className={'pi-comm' + (inst.hasBonus ? ' has-bonus' : '')} style={{ cursor: 'default' }}>
-          <i className="bi bi-cash-coin" /> Your commission: <b>{prog.commission}</b>
+          <i className="bi bi-cash-coin" /> Your commission: <b>{inst.commission}</b>
           {inst.hasBonus && (
-            <span className="pi-bonus-tag"><i className="bi bi-stars" />BONUS {inst.bonusShort || ''}</span>
+            <span className="pi-bonus-tag"><i className="bi bi-stars" />BONUS {inst.bonusShort !== inst.commission ? inst.bonusShort || '' : ''}</span>
           )}
-          <span className="pi-comm-sample">
-            {prog.commissionSource === 'sheet' ? 'master sheet' : 'sample rate'}
-          </span>
         </div>
       )}
 

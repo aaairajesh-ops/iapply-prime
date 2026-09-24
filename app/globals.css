@@ -725,8 +725,6 @@ button { font: inherit; cursor: pointer; }
 .pi-grid { gap: .7rem; grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); }
 .pi-inst { min-width: 0; }
 .pi-inst > * { min-width: 0; max-width: 100%; }
-@media (min-width: 1280px) { .pi-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
-@media (min-width: 1700px) { .pi-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
 
 /* --- mobile: keep the header compact so products start higher ------------- */
 @media (max-width: 700px) {
@@ -744,3 +742,27 @@ button { font: inherit; cursor: pointer; }
   .pi-inst { padding: .7rem .75rem; }
   .pi-inst-id-min strong { font-size: .95rem; }
 }
+
+/* --- use the full screen width: no empty band on the right ----------------- */
+.pi-main { max-width: none; }
+.pi-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 228px), 1fr)); }
+
+/* --- campuses -------------------------------------------------------------- */
+.pi-prog-campus {
+  display: inline-flex; align-items: center; gap: .3rem; align-self: flex-start;
+  margin: .1rem 0 .15rem; padding: .16rem .55rem; border-radius: 999px;
+  font-size: .74rem; font-weight: 700; color: #1e3a8a;
+  background: #eff6ff; border: 1px solid #bfdbfe;
+}
+.pi-campus-group { flex-wrap: wrap; }
+.pi-tool-n {
+  display: inline-block; min-width: 1.3em; margin-left: .25rem; padding: 0 .35rem;
+  border-radius: 999px; background: rgba(15, 23, 42, .08); font-size: .7em; font-weight: 800; text-align: center;
+}
+.pi-tool.is-on .pi-tool-n { background: rgba(255, 255, 255, .25); }
+.pi-prog-count { margin: 0 0 .6rem; }
+.pi-more { display: flex; margin: .4rem auto 1rem; justify-content: center; }
+.pi-modal-body > .pi-prog-count, .pi-modal-body > .pi-more, .pi-modal-body > .pi-noresult { grid-column: 1 / -1; }
+/* small dialogs (commission, sync) are a single column, not the programme grid */
+.pi-panel-sm .pi-modal-body { display: block; }
+.pi-panel-sm .pi-modal-body > * + * { margin-top: .6rem; }

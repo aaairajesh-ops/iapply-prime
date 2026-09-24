@@ -48,10 +48,20 @@ const initials = (name) => {
 
 // Deep link into the portal's Search Program for this institution. The portal
 // lists that university's programmes; "View Details" there opens the exact card.
-const portalUrl = (inst) =>
-  inst.portalUniId
-    ? `https://iapply.io/outreachs/search-program?c_id=${inst.portalCountryId}&u_id=${inst.portalUniId}`
+const portalUrl = (inst, prog) => {
+  const uid = (prog && prog.campusId) || inst.portalUniId;
+  return uid
+    ? `https://iapply.io/outreachs/search-program?c_id=${inst.portalCountryId}&u_id=${uid}`
     : 'https://iapply.io/outreachs/search-program';
+};
+
+// "6 campuses · New Brunswick" for multi-campus institutions, else the campus.
+const whereLine = (inst) =>
+  inst.campuses && inst.campuses.length > 1
+    ? `${inst.campuses.length} campuses · ${inst.city}`
+    : `${inst.campus} · ${inst.city}`;
+
+const PAGE = 40; // programme cards rendered at a time inside an institution
 
 // Local /public/logos file first; otherwise the logo URL the catalogue publishes.
 const logoSrc = (inst) => (inst.logo ? `/logos/${inst.logo}` : inst.portalLogo || null);
@@ -122,6 +132,8 @@ export default function PrimeList({ data: initial }) {
   const [dir, setDir] = useState(-1);
   const [shortlist, setShortlist] = useState([]);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [campus, setCampus] = useState('all');
+  const [limit, setLimit] = useState(PAGE);
   const counsellors = COUNSELLORS[destCode] || [];
 
   /* --- phone back button closes the open sheet -----------------------------
@@ -171,12 +183,25 @@ export default function PrimeList({ data: initial }) {
 
   const programs = useMemo(() => {
     if (!openInst) return [];
-    const list = openInst.programs.filter(matches);
+    const list = openInst.programs.filter((p) => matches(p) && (campus === 'all' || p.campus === campus));
     const val = (p) => (typeof p.tf === 'number' ? p.tf : Infinity);
     if (sort === 'tat')
       return [...list].sort((a, b) => (Number((a.offerTat || '').match(/\d+/)?.[0] ?? 9999)) - (Number((b.offerTat || '').match(/\d+/)?.[0] ?? 9999)));
     return [...list].sort((a, b) => (val(a) - val(b)) * dir);
-  }, [openInst, filter, smart, sort, dir]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [openInst, filter, smart, sort, dir, campus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // a new institution, campus or filter starts again from the first page
+  useEffect(() => { setLimit(PAGE); }, [openInst, filter, smart, sort, dir, campus]);
+
+  // programmes per campus (after the level / smart filters), for the chips
+  const campusCounts = useMemo(() => {
+    if (!openInst || !openInst.campuses || openInst.campuses.length < 2) return null;
+    const n = {};
+    for (const p of openInst.programs) if (matches(p)) n[p.campus] = (n[p.campus] || 0) + 1;
+    return n;
+  }, [openInst, filter, smart]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openInstitution = (inst) => { setOpenInst(inst); setSort('tf'); setDir(-1); setCampus('all'); };
 
   const toggleShortlist = (key) =>
     setShortlist((s) => (s.includes(key) ? s.filter((x) => x !== key) : [...s, key]));
@@ -302,9 +327,9 @@ export default function PrimeList({ data: initial }) {
                 <div key={inst.id} className="pi-inst" role="button" tabIndex={0}
                   onClick={(e) => {
                     if (e.target.closest('[data-comm]') || e.target.closest('.pi-contact')) return;
-                    setOpenInst(inst); setSort('tf'); setDir(-1);
+                    openInstitution(inst);
                   }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') setOpenInst(inst); }}>
+                  onKeyDown={(e) => { if (e.key === 'Enter') openInstitution(inst); }}>
                   {/* phone numbers now live once at the top of the page */}
                   {immediateCount(inst) > 0 && (
                     <span className={'pi-now-dot' + (onshoreCount(inst) > 0 ? ' is-onshore' : '')}
@@ -317,7 +342,7 @@ export default function PrimeList({ data: initial }) {
                     <Logo inst={inst} />
                     <div className="pi-inst-id-min">
                       <strong>{inst.name}</strong>
-                      <span className="pi-dim">{inst.campus} · {inst.city}</span>
+                      <span className="pi-dim" title={inst.campus}>{whereLine(inst)}</span>
                     </div>
                   </div>
 
@@ -366,7 +391,7 @@ export default function PrimeList({ data: initial }) {
                 <div>
                   <strong>{openInst.name}</strong>
                   <div className="pi-dim">
-                    {openInst.campus} · {openInst.city} · {openInst.type}
+                    {whereLine(openInst)} · {openInst.type}
                   </div>
                 </div>
               </div>
@@ -392,6 +417,21 @@ export default function PrimeList({ data: initial }) {
                 </button>
               </div>
 
+              {campusCounts && (
+                <div className="pi-toolbar-group pi-campus-group" role="group" aria-label="Campus">
+                  <span className="pi-dim small"><i className="bi bi-geo-alt" /> Campus</span>
+                  <button type="button" className={'pi-tool' + (campus === 'all' ? ' is-on' : '')} onClick={() => setCampus('all')}>
+                    All campuses <span className="pi-tool-n">{Object.values(campusCounts).reduce((a, b) => a + b, 0)}</span>
+                  </button>
+                  {openInst.campuses.filter((c) => campusCounts[c.name]).map((c) => (
+                    <button key={c.portalUniId} type="button" className={'pi-tool' + (campus === c.name ? ' is-on' : '')}
+                      onClick={() => setCampus(c.name)}>
+                      {c.name} <span className="pi-tool-n">{campusCounts[c.name]}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* filters chosen on the list still apply in here - show them so
                   an empty result is never a mystery, especially on a phone */}
               {smart.length > 0 && (
@@ -411,7 +451,11 @@ export default function PrimeList({ data: initial }) {
             </div>
 
             <div className="pi-modal-body">
-              {programs.map((prog) => {
+              <p className="pi-dim small pi-prog-count">
+                Showing {Math.min(limit, programs.length)} of {programs.length} programme{programs.length === 1 ? '' : 's'}
+                {campus !== 'all' ? ` at ${campus}` : openInst.campuses && openInst.campuses.length > 1 ? ` across ${openInst.campuses.length} campuses` : ''}
+              </p>
+              {programs.slice(0, limit).map((prog) => {
                 const key = `${openInst.id}::${prog.name}`;
                 return (
                   <div className="pi-prog" key={prog.id}>
@@ -422,6 +466,9 @@ export default function PrimeList({ data: initial }) {
                       </a>
                       <IntakeFlash prog={prog} />
                     </div>
+                    {prog.campus && (
+                      <div className="pi-prog-campus"><i className="bi bi-geo-alt-fill" />{prog.campus}</div>
+                    )}
                     <div className="pi-prog-path" title="Shareable link for this programme">
                       <i className="bi bi-link-45deg" />{prog.path}
                     </div>
@@ -434,14 +481,16 @@ export default function PrimeList({ data: initial }) {
                       {prog.offerTat && <span><i className="bi bi-stopwatch" />Offer TAT {prog.offerTat}</span>}
                     </div>
 
-                    {prog.commission && (
+                    {/* the institution's commission (master sheet) — one source, so a
+                        programme card can never show an out-of-date rate */}
+                    {openInst.commission && (
                       <div className={'pi-comm' + (openInst.hasBonus ? ' has-bonus' : '')}
                         role="button" tabIndex={0} title="See commission details"
                         onClick={() => setCommInst(openInst)}
                         onKeyDown={(e) => { if (e.key === 'Enter') setCommInst(openInst); }}>
-                        <i className="bi bi-cash-coin" /> Your commission: <b>{prog.commission}</b>
+                        <i className="bi bi-cash-coin" /> Your commission: <b>{openInst.commission}</b>
                         {openInst.hasBonus && (
-                          <span className="pi-bonus-tag"><i className="bi bi-stars" />BONUS {openInst.bonusShort || ''}</span>
+                          <span className="pi-bonus-tag"><i className="bi bi-stars" />BONUS {openInst.bonusShort !== openInst.commission ? openInst.bonusShort || '' : ''}</span>
                         )}
                       </div>
                     )}
@@ -463,13 +512,20 @@ export default function PrimeList({ data: initial }) {
                         <i className="bi bi-clipboard-check" /> See details
                       </a>
                       <CopyLink path={prog.path} compact />
-                      <a className="pi-btn pi-btn-primary" href={portalUrl(openInst)} target="_blank" rel="noopener noreferrer">
+                      <a className="pi-btn pi-btn-primary" href={portalUrl(openInst, prog)} target="_blank" rel="noopener noreferrer">
                         <i className="bi bi-send-fill" /> Apply now
                       </a>
                     </div>
                   </div>
                 );
               })}
+              {programs.length > limit && (
+                <button type="button" className="pi-btn pi-btn-ghost pi-more"
+                  onClick={() => setLimit((n) => n + PAGE * 2)}>
+                  <i className="bi bi-chevron-down" /> Show {Math.min(PAGE * 2, programs.length - limit)} more
+                  <span className="pi-dim small"> · {programs.length - limit} left</span>
+                </button>
+              )}
               {programs.length === 0 && (
                 <div className="pi-noresult">
                   <p className="pi-dim">
@@ -477,7 +533,7 @@ export default function PrimeList({ data: initial }) {
                     filters you have on.
                   </p>
                   <button type="button" className="pi-btn pi-btn-primary"
-                    onClick={() => { setSmart([]); setFilter('all'); }}>
+                    onClick={() => { setSmart([]); setFilter('all'); setCampus('all'); }}>
                     <i className="bi bi-x-circle" /> Clear filters and show all
                   </button>
                 </div>
