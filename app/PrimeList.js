@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { classifyIntakes, intakeFlash, isOnshore, normaliseProgramIntakes, IMMEDIATE_WINDOW_MONTHS } from '../lib/intakes';
-import { ensureSlugs } from '../lib/slug';
+import { ensureSlugs, institutionPath, institutionPitch } from '../lib/slug';
 import CopyLink from './CopyLink';
 
 const NOW = () => new Date();
@@ -63,6 +63,18 @@ const whereLine = (inst) =>
 
 const PAGE = 40; // programme cards rendered at a time inside an institution
 
+// WhatsApp share for one institution: the pitch plus its own link, which
+// WhatsApp turns into a preview card with the institution's thumbnail.
+function shareOnWhatsApp(dest, inst) {
+  const url = window.location.origin + institutionPath(dest, inst);
+  const text = `*${inst.name}* — iApply Prime ${dest.name}
+${institutionPitch(dest, inst)}
+
+Programmes, fees, intakes and apply:
+${url}`;
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+}
+
 // Local /public/logos file first; otherwise the logo URL the catalogue publishes.
 const logoSrc = (inst) => (inst.logo ? `/logos/${inst.logo}` : inst.portalLogo || null);
 
@@ -120,11 +132,15 @@ const normalise = (data) =>
     })),
   });
 
-export default function PrimeList({ data: initial }) {
+export default function PrimeList({ data: initial, initialDest = null, initialInst = null }) {
   const [data, setData] = useState(() => normalise(initial));
   const { destinations, features } = data;
-  const [destCode, setDestCode] = useState(destinations[0].code);
-  const [openInst, setOpenInst] = useState(null);
+  const [destCode, setDestCode] = useState(() =>
+    destinations.some((d) => d.code === initialDest) ? initialDest : destinations[0].code);
+  // an institution link (/canada/niagara-college) lands with its sheet open
+  const [openInst, setOpenInst] = useState(() =>
+    initialInst ? destinations.flatMap((d) => d.institutions).find((i) => i.id === initialInst) || null : null);
+  const landing = useRef(Boolean(initialInst));
   const [commInst, setCommInst] = useState(null);
   const [filter, setFilter] = useState('all');
   const [smart, setSmart] = useState([]);
@@ -144,7 +160,17 @@ export default function PrimeList({ data: initial }) {
 
   useEffect(() => {
     if (!anySheet) return undefined;
-    window.history.pushState({ piSheet: true }, '');
+    // the open institution's own link sits in the address bar, so copying it
+    // from the browser gives the same shareable URL as the Share button
+    const d = destinations.find((x) => x.code === destCode);
+    const url = openInst && d ? institutionPath(d, openInst) : window.location.pathname;
+    if (landing.current) {
+      // arrived on an institution link: put the list behind it, so Back
+      // (or closing) shows that country's institutions instead of leaving
+      landing.current = false;
+      window.history.replaceState(null, '', `/${destCode}`);
+    }
+    window.history.pushState({ piSheet: true }, '', url);
     const onPop = () => closeSheets();
     window.addEventListener('popstate', onPop);
     return () => {
@@ -290,7 +316,7 @@ export default function PrimeList({ data: initial }) {
               <button key={d.code} type="button" role="tab"
                 className={'pi-tab' + (d.code === destCode ? ' is-on' : '')}
                 style={{ '--tc1': d.theme[0], '--tc2': d.theme[1] }}
-                onClick={() => setDestCode(d.code)}>
+                onClick={() => { setDestCode(d.code); window.history.replaceState(null, '', `/${d.code}`); }}>
                 {d.flagImg ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img className="pi-flag-img" src={`/logos/${d.flagImg}`} alt="" />
@@ -326,11 +352,15 @@ export default function PrimeList({ data: initial }) {
               return (
                 <div key={inst.id} className="pi-inst" role="button" tabIndex={0}
                   onClick={(e) => {
-                    if (e.target.closest('[data-comm]') || e.target.closest('.pi-contact')) return;
+                    if (e.target.closest('[data-comm]') || e.target.closest('[data-share]')) return;
                     openInstitution(inst);
                   }}
                   onKeyDown={(e) => { if (e.key === 'Enter') openInstitution(inst); }}>
-                  {/* phone numbers now live once at the top of the page */}
+                  <button type="button" className="pi-card-share" data-share title={`Share ${inst.name} on WhatsApp`}
+                    aria-label={`Share ${inst.name} on WhatsApp`}
+                    onClick={(e) => { e.stopPropagation(); shareOnWhatsApp(dest, inst); }}>
+                    <i className="bi bi-whatsapp" />
+                  </button>
                   {immediateCount(inst) > 0 && (
                     <span className={'pi-now-dot' + (onshoreCount(inst) > 0 ? ' is-onshore' : '')}
                       title={`${immediateCount(inst)} programme${immediateCount(inst) === 1 ? '' : 's'} with an immediate intake`
@@ -394,6 +424,12 @@ export default function PrimeList({ data: initial }) {
                     {whereLine(openInst)} · {openInst.type}
                   </div>
                 </div>
+              </div>
+              <div className="pi-head-share">
+                <button type="button" className="pi-btn pi-btn-wa" onClick={() => shareOnWhatsApp(dest, openInst)}>
+                  <i className="bi bi-whatsapp" /> <span>Share on WhatsApp</span>
+                </button>
+                <CopyLink path={institutionPath(dest, openInst)} compact />
               </div>
               <button type="button" className="pi-close" onClick={() => setOpenInst(null)} aria-label="Close">
                 <i className="bi bi-x-lg" />

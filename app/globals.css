@@ -766,3 +766,22 @@ button { font: inherit; cursor: pointer; }
 /* small dialogs (commission, sync) are a single column, not the programme grid */
 .pi-panel-sm .pi-modal-body { display: block; }
 .pi-panel-sm .pi-modal-body > * + * { margin-top: .6rem; }
+
+/* --- institution sharing ---------------------------------------------------- */
+.pi-card-share {
+  position: absolute; top: .45rem; right: .45rem; z-index: 2;
+  width: 28px; height: 28px; border-radius: 50%; border: 1px solid #bbf7d0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #f0fdf4; color: #16a34a; font-size: .9rem; cursor: pointer;
+  transition: transform .15s, background .15s;
+}
+.pi-card-share:hover { background: #25d366; color: #fff; transform: scale(1.08); }
+.pi-inst-id-min strong { padding-right: 1.7rem; }
+.pi-head-share { display: flex; gap: .45rem; margin-left: auto; margin-right: .6rem; align-items: center; flex-wrap: wrap; }
+.pi-btn-wa { background: #25d366; color: #fff; border-color: #25d366; }
+.pi-btn-wa:hover { background: #1ebe5a; color: #fff; }
+@media (max-width: 700px) {
+  .pi-head-share { order: 3; width: 100%; margin: .5rem 0 0; }
+  .pi-head-share .pi-btn { flex: 1; justify-content: center; }
+  .pi-modal-head { flex-wrap: wrap; }
+}
